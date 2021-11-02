@@ -183,7 +183,6 @@ int lthread_init(void)
         .sa_handler = lthread_alarm_handler,
         .sa_flags = SA_NODEFER,
     };
-    sigset_t mask;
 
     /* Set SIGALRM signal handler */
     sigemptyset(&act.sa_mask);
@@ -219,7 +218,7 @@ lthread_create(struct lthread *t, void *data, void *(*start_routine)(void *data)
         perror("Failed to mmap stack space for new thread: ");
         exit(EXIT_FAILURE);
     }
-    stack += LTHREAD_STACK_SIZE;
+    stack = (void*)( ((char*)stack) + LTHREAD_STACK_SIZE );
 
     t->stack = stack;
     t->start_routine = start_routine;
