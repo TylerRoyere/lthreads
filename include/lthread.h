@@ -1,6 +1,7 @@
 #ifndef LTHREAD_H
 #define LTHREAD_H 
 
+#include <stdlib.h>
 #include <setjmp.h>
 
 enum lthread_status {
@@ -17,13 +18,14 @@ struct lthread {
     enum lthread_status status;
     sigjmp_buf context;
     void *stack;
-    int id;
+    size_t id;
     struct lthread *next;
 };
 
 
 int lthread_init(void);
 int lthread_create(struct lthread *t, void *data, void *(*start_routine)(void *data));
-int lthread_destroy(struct lthread *t, void **retval);
+int lthread_join(struct lthread *t, void **retval);
+void lthread_destroy(struct lthread *t);
 
 #endif
