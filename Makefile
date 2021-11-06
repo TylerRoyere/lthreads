@@ -20,7 +20,7 @@ MAIN_ASM_SRCS := src/start_thread.S
 MAIN_OBJS := $(call src_to_objs, $(MAIN_SRCS), $(OBJ_DIR))
 MAIN_OBJS += $(call asm_src_to_objs, $(MAIN_ASM_SRCS), $(OBJ_DIR))
 
-.PHONY: clean
+.PHONY: clean valgrind
 
 all: $(TARGETS)
 
@@ -38,6 +38,10 @@ $(OBJ_DIR)/%.o: %.S | $(OBJ_DIR)
 
 $(OBJ_DIR):
 	mkdir -p $(OBJ_DIR)
+
+valgrind: CFLAGS += -g -O0 -DLTHREADS_DEBUG
+valgrind: clean main
+	valgrind ./main
 
 clean:
 	rm -rf $(OBJ_DIR)/* $(TARGETS)

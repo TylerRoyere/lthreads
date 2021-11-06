@@ -14,16 +14,24 @@
 #include <sys/mman.h>
 #include <sys/time.h>
 
-#ifndef LTHREAD_ALARM_INTERVAL
-#define LTHREAD_ALARM_INTERVAL (999999999)
+#ifdef LTHREAD_DEBUG
+#include <valgrind/valgrind.h>
+#endif
+
+#ifndef LTHREAD_ALARM_INTERVAL_NS
+#define LTHREAD_ALARM_INTERVAL_NS (500)
 #endif 
 
 #define NSEC_PER_SEC (1000000000)
-#define LTHREAD_ALARM_INTERVAL_PART_NS ((LTHREAD_ALARM_INTERVAL) % NSEC_PER_SEC)
-#define LTHREAD_ALARM_INTERVAL_PART_S ((LTHREAD_ALARM_INTERVAL) / NSEC_PER_SEC)
+#define LTHREAD_ALARM_INTERVAL_PART_NS ((LTHREAD_ALARM_INTERVAL_NS) % NSEC_PER_SEC)
+#define LTHREAD_ALARM_INTERVAL_PART_S ((LTHREAD_ALARM_INTERVAL_NS) / NSEC_PER_SEC)
 
 #ifndef LTHREAD_STACK_SIZE
 #define LTHREAD_STACK_SIZE (2 * 1024 * 1024) /* 2MB */
+#endif
+
+#ifndef LTHREAD_MAIN_THREAD
+#define LTHREAD_MAIN_THREAD 1000000
 #endif
 
 #ifndef LTHREAD_INITIAL_LTHREADS
@@ -39,21 +47,19 @@
 #endif
 
 #ifdef LTHREAD_DEBUG_SIGNAL_BLOCKING
-
 #define UNBLOCK_SIGNAL() do { \
     sigprocmask(SIG_UNBLOCK, &lthread_sig_mask, NULL); \
     fprintf(stdout, "Unblocking signal %d:%d\n", __FILE__, __LINE__); \
 } while (0)
+
 #define BLOCK_SIGNAL() do { \
     sigprocmask(SIG_BLOCK, &lthread_sig_mask, NULL); \
     fprintf(stdout, "Blocking signal %d:%d\n", __FILE__, __LINE__); \
 } while (0)
 
 #else 
-
 #define UNBLOCK_SIGNAL() sigprocmask(SIG_UNBLOCK, &lthread_sig_mask, NULL)
 #define BLOCK_SIGNAL() sigprocmask(SIG_BLOCK, &lthread_sig_mask, NULL)
-
 #endif
 
 
@@ -97,14 +103,6 @@ init_queue(struct lthread *main_thread)
 }
 
 static void
-bump_queue(void)
-{
-    /* Move tail and head forward one entry */
-    tail = head;
-    head = head->next;
-}
-
-static void
 pop_queue(void)
 {
     /* Use same assumption as push_queue(), the main thread
@@ -112,6 +110,22 @@ pop_queue(void)
      */
     tail->next = head->next;
     head = head->next;
+}
+
+/* Bumps tail and start forward 1, if 'rem' is non-zero
+ * it will first remove the front element
+ */
+static void
+bump_queue(int rem)
+{
+    if (!rem) {
+        /* Move tail and head forward one entry */
+        tail = head;
+        head = head->next;
+    }
+    else {
+        pop_queue();
+    }
 }
 
 static size_t
@@ -221,12 +235,13 @@ static void
 lthread_alarm_handler(int num)
 {
     BLOCK_SIGNAL();
-    printf("LTHREAD_SIG %d sent!\n", num);
+    int remove_front = 0; /* Indicated if the first entry should be removed */
+    (void)num;
 
     /* save current thread execution */
     if (head->status == DONE) {
-        fprintf(stderr, "TODO: handle return value\n");
-        pop_queue();
+        /* If the entry is done, remove it from scheduling */
+        remove_front = 1;
     }
     else {
         head->status = READY;
@@ -236,13 +251,14 @@ lthread_alarm_handler(int num)
             return;
         }
 
-        bump_queue();
+        remove_front = 0;
     }
 
-    while (head->status != READY) {
+    do {
+        bump_queue(remove_front);
+        remove_front = 0;
         switch (head->status) {
             case CREATED:
-               puts("Creating thread");
                 UNBLOCK_SIGNAL();
                 start_thread(head, head->start_routine, head->data, lthread_stack_start(head));
                 break;
@@ -252,15 +268,27 @@ lthread_alarm_handler(int num)
             case READY:
                 break;
             case DONE:
+                remove_front = 1;
                 break;
             case BLOCKED:
                 break;
             default:
                 fprintf(stderr, "Invalid state %d\n", head->status);
         }
-        bump_queue();
-    }
+    } while (head->status != READY);
     siglongjmp(head->context, 1);
+}
+
+/* Cleans up the environment when exiting */
+void
+lthread_cleanup(void)
+{
+    /* Delete timer */
+    timer_delete(lthread_timer);
+    /* Free lthreads array */
+    free(lthreads);
+    /* Free main thread information */
+    free(head);
 }
 
 int lthread_init(void)
@@ -305,8 +333,12 @@ int lthread_init(void)
     /* Setup main thread context */
     new_thread = malloc(sizeof(*new_thread));
     new_thread->status = RUNNING;
+    new_thread->id = LTHREAD_MAIN_THREAD;
     sigsetjmp(new_thread->context, 1);
     init_queue(new_thread);
+
+    /* Add cleanup function run at exit() */
+    atexit(lthread_cleanup);
 
     /* Start scheduled signals */
     change_alarm(1);
@@ -340,6 +372,7 @@ lthread_create(struct lthread *t, void *data, void *(*start_routine)(void *data)
     t->data = data;
     t->status = CREATED;
     t->id = allocate_lthread(); /* allocate handle for thread */
+    sigsetjmp(t->context, 1);
 
     /* Copy structure to internal one, this indicated that maybe
      * the interface needs to be a little different */
