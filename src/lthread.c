@@ -6,15 +6,21 @@
 #include <stdint.h>
 #include <assert.h>
 #include <string.h>
+#include <time.h>
 
 #include <unistd.h>
 #include <signal.h>
 
 #include <sys/mman.h>
+#include <sys/time.h>
 
 #ifndef LTHREAD_ALARM_INTERVAL
-#define LTHREAD_ALARM_INTERVAL (999999)
+#define LTHREAD_ALARM_INTERVAL (999999999)
 #endif 
+
+#define NSEC_PER_SEC (1000000000)
+#define LTHREAD_ALARM_INTERVAL_PART_NS ((LTHREAD_ALARM_INTERVAL) % NSEC_PER_SEC)
+#define LTHREAD_ALARM_INTERVAL_PART_S ((LTHREAD_ALARM_INTERVAL) / NSEC_PER_SEC)
 
 #ifndef LTHREAD_STACK_SIZE
 #define LTHREAD_STACK_SIZE (2 * 1024 * 1024) /* 2MB */
@@ -22,6 +28,14 @@
 
 #ifndef LTHREAD_INITIAL_LTHREADS
 #define LTHREAD_INITIAL_LTHREADS 4
+#endif
+
+#ifndef LTHREAD_CLOCKID
+#define LTHREAD_CLOCKID CLOCK_REALTIME
+#endif
+
+#ifndef LTHREAD_SIG
+#define LTHREAD_SIG (SIGRTMIN)
 #endif
 
 
@@ -43,6 +57,9 @@ static struct lthread *tail = NULL;
 /* Array used to store threads for return codes */
 static struct lthread **lthreads = NULL;
 static size_t nlthreads = 0;
+
+/* Timer used for signals */
+static timer_t lthread_timer;
 
 static void
 push_queue(struct lthread *t)
@@ -122,12 +139,9 @@ lthread_run(
 {
     printf("Starting lthread!\n");
     me->status = RUNNING;
-    void *ret;
-    ret = start_routine(data);
-    me->data = ret;
+    me->data = start_routine(data);
     me->status = DONE;
     printf("Thread finished\n");
-    ualarm(1, LTHREAD_ALARM_INTERVAL);
     for (;;);
 }
 
@@ -150,28 +164,38 @@ lthread_stack_start(struct lthread *t)
 
 
 static void
-enable_alarm(void)
+change_alarm(int turn_on)
 {
-    sigset_t mask;
-    /* Unblock SIGALRM */
-    sigemptyset(&mask);
-    sigaddset(&mask, SIGALRM);
-    if (sigprocmask(SIG_UNBLOCK, &mask, NULL)) {
-        perror("Failed to unblock SIGALRM");
-        exit(EXIT_FAILURE);
-    }
-}
+    /* The on structure starts with the default scheduling parameters */
+    static struct itimerspec on = {
+        .it_interval = {
+            .tv_sec = LTHREAD_ALARM_INTERVAL_PART_S,
+            .tv_nsec = LTHREAD_ALARM_INTERVAL_PART_NS,
+        },
+        .it_value = {
+            .tv_sec = LTHREAD_ALARM_INTERVAL_PART_S,
+            .tv_nsec = LTHREAD_ALARM_INTERVAL_PART_NS,
+        },
+    };
+    /* The off structure is just all 0s */
+    static struct itimerspec off = {
+        .it_interval = {
+            .tv_sec = 0,
+            .tv_nsec = 0,
+        },
+        .it_value = {
+            .tv_sec = 0,
+            .tv_nsec = 0,
+        },
+    };
 
-static void
-disable_alarm(void)
-{
-    sigset_t mask;
-    /* Block SIGALRM */
-    sigemptyset(&mask);
-    sigaddset(&mask, SIGALRM);
-    if (sigprocmask(SIG_BLOCK, &mask, NULL)) {
-        perror("Failed to block SIGALRM");
-        exit(EXIT_FAILURE);
+    if (turn_on) {
+        /* Turn the timer on */
+        timer_settime(lthread_timer, 0, &on, &off);
+    }
+    else {
+        /* Turn the timer off */
+        timer_settime(lthread_timer, 0, &off, &on);
     }
 }
 
@@ -179,7 +203,7 @@ disable_alarm(void)
 static void
 lthread_alarm_handler(int num)
 {
-    printf("SIGALRM %d sent!\n", num);
+    printf("LTHREAD_SIG %d sent!\n", num);
 
     /* save current thread execution */
     if (head->status == DONE) {
@@ -221,24 +245,37 @@ lthread_alarm_handler(int num)
 int lthread_init(void)
 {
     struct lthread *new_thread;
+    /* Action to perform on LTHREAD_SIG */
     struct sigaction act = {
-        .sa_handler = lthread_alarm_handler,
-        .sa_flags = SA_NODEFER,
+        .sa_handler = lthread_alarm_handler, /* Scheduling handler */
+        .sa_flags = SA_NODEFER, /* Can be interrupted within scheduler
+                                -- Maybe this shouldn't be the case? */
     };
-
-    /* Set SIGALRM signal handler */
-    sigemptyset(&act.sa_mask);
-    if (sigaction(SIGALRM, &act, NULL)) {
-        fprintf(stderr, "Failed to set SIGALRM handler\n");
-        exit(EXIT_FAILURE);
-    }
+    struct sigevent event = {
+        .sigev_notify = SIGEV_SIGNAL, /* Call handler on signal */
+        .sigev_signo = LTHREAD_SIG, /* Signal number, based on SIGRTALRM */
+        .sigev_value.sival_ptr = &lthread_timer, /* Timer to use if necessary */
+    };
 
     /* Allocate thread storage */
     lthreads = calloc(LTHREAD_INITIAL_LTHREADS, sizeof(*lthreads));
     nlthreads = LTHREAD_INITIAL_LTHREADS;
 
-    /* Unblock SIGALRM */
-    enable_alarm();
+    /* Set LTHREAD_SIG signal handler */
+    sigemptyset(&act.sa_mask);
+    if (sigaction(LTHREAD_SIG , &act, NULL)) {
+        fprintf(stderr, "Failed to set LTHREAD_SIG handler\n");
+        exit(EXIT_FAILURE);
+    }
+
+    /* block lthread signal */
+    BLOCK_SIGNAL();
+
+    /* Create timer */
+    if (timer_create(LTHREAD_CLOCKID, &event, &lthread_timer) == -1) {
+        perror("Failed to create timer");
+        exit(EXIT_FAILURE);
+    }
 
     /* Setup main thread context */
     new_thread = malloc(sizeof(*new_thread));
@@ -246,8 +283,11 @@ int lthread_init(void)
     sigsetjmp(new_thread->context, 1);
     init_queue(new_thread);
 
-    /* Start alarming */
-    ualarm(1, LTHREAD_ALARM_INTERVAL);
+    /* Start scheduled signals */
+    change_alarm(1);
+
+    /* Unblock lthread signal */
+    UNBLOCK_SIGNAL();
 
     return 0;
 }
