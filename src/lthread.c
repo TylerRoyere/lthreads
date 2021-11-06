@@ -38,9 +38,23 @@
 #define LTHREAD_SIG (SIGRTMIN)
 #endif
 
+#ifdef LTHREAD_DEBUG_SIGNAL_BLOCKING
 
-#define BLOCK_SIGNAL()
-#define UNBLOCK_SIGNAL()
+#define UNBLOCK_SIGNAL() do { \
+    sigprocmask(SIG_UNBLOCK, &lthread_sig_mask, NULL); \
+    fprintf(stdout, "Unblocking signal %d:%d\n", __FILE__, __LINE__); \
+} while (0)
+#define BLOCK_SIGNAL() do { \
+    sigprocmask(SIG_BLOCK, &lthread_sig_mask, NULL); \
+    fprintf(stdout, "Blocking signal %d:%d\n", __FILE__, __LINE__); \
+} while (0)
+
+#else 
+
+#define UNBLOCK_SIGNAL() sigprocmask(SIG_UNBLOCK, &lthread_sig_mask, NULL)
+#define BLOCK_SIGNAL() sigprocmask(SIG_BLOCK, &lthread_sig_mask, NULL)
+
+#endif
 
 
 void start_thread(
@@ -60,6 +74,9 @@ static size_t nlthreads = 0;
 
 /* Timer used for signals */
 static timer_t lthread_timer;
+
+/* Mask containing scheduling signal */
+static sigset_t lthread_sig_mask;
 
 static void
 push_queue(struct lthread *t)
@@ -203,6 +220,7 @@ change_alarm(int turn_on)
 static void
 lthread_alarm_handler(int num)
 {
+    BLOCK_SIGNAL();
     printf("LTHREAD_SIG %d sent!\n", num);
 
     /* save current thread execution */
@@ -213,8 +231,10 @@ lthread_alarm_handler(int num)
     else {
         head->status = READY;
 
-        if (sigsetjmp(head->context, 1) == 1)
+        if (sigsetjmp(head->context, 1) == 1) {
+            UNBLOCK_SIGNAL();
             return;
+        }
 
         bump_queue();
     }
@@ -222,7 +242,8 @@ lthread_alarm_handler(int num)
     while (head->status != READY) {
         switch (head->status) {
             case CREATED:
-                puts("Creating thread");
+               puts("Creating thread");
+                UNBLOCK_SIGNAL();
                 start_thread(head, head->start_routine, head->data, lthread_stack_start(head));
                 break;
             case RUNNING:
@@ -248,7 +269,7 @@ int lthread_init(void)
     /* Action to perform on LTHREAD_SIG */
     struct sigaction act = {
         .sa_handler = lthread_alarm_handler, /* Scheduling handler */
-        .sa_flags = SA_NODEFER, /* Can be interrupted within scheduler
+        .sa_flags = 0/*SA_NODEFER*/, /* Can be interrupted within scheduler
                                 -- Maybe this shouldn't be the case? */
     };
     struct sigevent event = {
@@ -260,6 +281,10 @@ int lthread_init(void)
     /* Allocate thread storage */
     lthreads = calloc(LTHREAD_INITIAL_LTHREADS, sizeof(*lthreads));
     nlthreads = LTHREAD_INITIAL_LTHREADS;
+
+    /* Setup signal mask */
+    sigemptyset(&lthread_sig_mask);
+    sigaddset(&lthread_sig_mask, LTHREAD_SIG);
 
     /* Set LTHREAD_SIG signal handler */
     sigemptyset(&act.sa_mask);
@@ -298,6 +323,8 @@ lthread_create(struct lthread *t, void *data, void *(*start_routine)(void *data)
     void *stack;
     struct lthread *new_thread;
 
+    BLOCK_SIGNAL();
+
     stack = mmap(NULL, LTHREAD_STACK_SIZE,
             PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE | MAP_STACK, -1, 0);
     if (stack == MAP_FAILED) {
@@ -320,6 +347,8 @@ lthread_create(struct lthread *t, void *data, void *(*start_routine)(void *data)
     memcpy(new_thread, t, sizeof(*new_thread));
     lthreads[t->id] = new_thread;
     push_queue(new_thread); /* Add thread to end of scheduling queue */
+
+    UNBLOCK_SIGNAL();
 
     return 0;
 }
