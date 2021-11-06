@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <setjmp.h>
+#include <ucontext.h>
 
 enum lthread_status {
     CREATED = 0,
@@ -16,10 +17,13 @@ struct lthread {
     void *(*start_routine)(void *data);
     void *data;
     enum lthread_status status;
-    sigjmp_buf context;
+    ucontext_t context;
     void *stack;
     size_t id;
     struct lthread *next;
+#ifdef LTHREAD_DEBUG
+    unsigned int stack_reg;
+#endif
 };
 
 
