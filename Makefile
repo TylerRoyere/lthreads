@@ -3,7 +3,8 @@ INCLUDES := $(foreach dir, $(INCLUDE_DIRS), -I$(dir))
 USR_DEFS ?= 
 USR_DEFS += #-DNDEBUG -DGENERATE_VECTOR_FUNCTIONS_INLINE
 DEFS := -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE
-CFLAGS := -std=c99 -Wpedantic -Wall -Wextra -fno-common -Wconversion $(DEFS) $(USR_DEFS)
+CFLAGS := -std=c99 -Wpedantic -Wall -Wextra -fno-common -Wconversion -g $(DEFS) $(USR_DEFS)
+LDFLAGS := -lrt
  
 CC := gcc
 OBJ_DIR := objs
@@ -24,7 +25,7 @@ MAIN_OBJS += $(call asm_src_to_objs, $(MAIN_ASM_SRCS), $(OBJ_DIR))
 all: $(TARGETS)
 
 main: src/main.c $(MAIN_OBJS)
-	$(CC) -o $@ $^ $(CFLAGS) $(INCLUDES)
+	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(INCLUDES)
 
 $(OBJ_DIR)/%.o: %.c %.h | $(OBJ_DIR)
 	$(CC) -c $< -o $@ $(CFLAGS) $(INCLUDES)
