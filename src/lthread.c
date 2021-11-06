@@ -20,27 +20,14 @@
 #define LTHREAD_STACK_SIZE (2 * 1024 * 1024) /* 2MB */
 #endif
 
-#ifdef __x86_64__
-
-#ifndef LTHREAD_SP
-#define LTHREAD_SP 6
-#endif 
-
-#ifndef LTHREAD_PC
-#define LTHREAD_PC 7
+#ifndef LTHREAD_INITIAL_LTHREADS
+#define LTHREAD_INITIAL_LTHREADS 4
 #endif
 
-#else
 
-#ifndef LTHREAD_SP
-#define LTHREAD_SP 4
-#endif 
+#define BLOCK_SIGNAL()
+#define UNBLOCK_SIGNAL()
 
-#ifndef LTHREAD_PC
-#define LTHREAD_PC 5
-#endif
-
-#endif 
 
 void start_thread(
         struct lthread *me,
@@ -49,9 +36,13 @@ void start_thread(
         void *stack
         );
 
-/* temporary single thread for testing */
+/* Queue used for scheduling */
 static struct lthread *head = NULL;
 static struct lthread *tail = NULL;
+
+/* Array used to store threads for return codes */
+static struct lthread **lthreads = NULL;
+static size_t nlthreads = 0;
 
 static void
 push_queue(struct lthread *t)
@@ -89,6 +80,39 @@ pop_queue(void)
     head = head->next;
 }
 
+static size_t
+allocate_lthread(void)
+{
+    size_t old_size, ii;
+    if (lthreads == NULL) {
+        fprintf(stderr, "No lthread storage, need to call lthread_init() first\n");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Search for open return code slot */
+    for (ii = 0; ii < nlthreads; ii++) {
+        if (lthreads[ii] == NULL) {
+            return ii;
+        }
+    }
+
+    /* None were found, we need to allocate more */
+    old_size = nlthreads;
+    nlthreads += 2;
+    lthreads = realloc(lthreads, sizeof(*lthreads) * nlthreads);
+
+    /* Clear newly allocated return codes since they may not be 0 */
+    memset(lthreads + old_size, 0, old_size * sizeof(*lthreads));
+
+    return old_size;
+}
+
+static void
+deallocate_lthread(size_t id)
+{
+    lthreads[id] = NULL;
+}
+
 extern void
 lthread_run(
         struct lthread *me,
@@ -106,6 +130,24 @@ lthread_run(
     ualarm(1, LTHREAD_ALARM_INTERVAL);
     for (;;);
 }
+
+static void
+free_lthread(struct lthread *t)
+{
+#ifdef LTHREAD_DEBUG
+    VALGRIND_STACK_DEREGISTER(t->stack_reg);
+#endif
+    munmap(t->stack, LTHREAD_STACK_SIZE);
+    free(t);
+}
+
+static void *
+lthread_stack_start(struct lthread *t)
+{
+    /* Everyone knows stacks grow upward :) */
+    return (void*)( ((char*)t->stack) + LTHREAD_STACK_SIZE );
+}
+
 
 static void
 enable_alarm(void)
@@ -157,7 +199,7 @@ lthread_alarm_handler(int num)
         switch (head->status) {
             case CREATED:
                 puts("Creating thread");
-                start_thread(head, head->start_routine, head->data, head->stack);
+                start_thread(head, head->start_routine, head->data, lthread_stack_start(head));
                 break;
             case RUNNING:
                 fprintf(stderr, "Thread marked running when it shouldn't be!\n");
@@ -191,6 +233,10 @@ int lthread_init(void)
         exit(EXIT_FAILURE);
     }
 
+    /* Allocate thread storage */
+    lthreads = calloc(LTHREAD_INITIAL_LTHREADS, sizeof(*lthreads));
+    nlthreads = LTHREAD_INITIAL_LTHREADS;
+
     /* Unblock SIGALRM */
     enable_alarm();
 
@@ -218,27 +264,58 @@ lthread_create(struct lthread *t, void *data, void *(*start_routine)(void *data)
         perror("Failed to mmap stack space for new thread: ");
         exit(EXIT_FAILURE);
     }
-    stack = (void*)( ((char*)stack) + LTHREAD_STACK_SIZE );
-
+#ifdef LTHRAED_DEBUG
+    t->stack_reg = VALGRIND_STACK_REGISTER(stack, stack + LTHREAD_STACK_SIZE);
+#endif
+    /* setup structure */
     t->stack = stack;
     t->start_routine = start_routine;
     t->data = data;
     t->status = CREATED;
+    t->id = allocate_lthread(); /* allocate handle for thread */
 
+    /* Copy structure to internal one, this indicated that maybe
+     * the interface needs to be a little different */
     new_thread = malloc(sizeof(*new_thread));
     memcpy(new_thread, t, sizeof(*new_thread));
-    push_queue(new_thread);
+    lthreads[t->id] = new_thread;
+    push_queue(new_thread); /* Add thread to end of scheduling queue */
 
     return 0;
 }
 
+void
+lthread_destroy(struct lthread *t)
+{
+    BLOCK_SIGNAL();
+    struct lthread *thread = lthreads[t->id];
+    thread->status = DONE;
+    UNBLOCK_SIGNAL();
+    lthread_join(thread, NULL);
+}
 
 int
-lthread_destroy(struct lthread *t, void **retval)
+lthread_join(struct lthread *t, void **retval)
 {
-    if (t->status == DONE) {
-        fprintf(stderr, "TODO: handle return value\n");
-        *retval = NULL;
+    if (t->id >= nlthreads) {
+        return 1;
     }
+
+    struct lthread *thread = lthreads[t->id];
+    if (thread == NULL) {
+        return 1;
+    }
+
+    while (thread->status != DONE) {
+        //raise(LTHREAD_SIG)
+    }
+
+    BLOCK_SIGNAL();
+    if (retval != NULL) *retval = thread->data;
+    deallocate_lthread(thread->id);
+    free_lthread(thread);
+    UNBLOCK_SIGNAL();
+
+
     return 0;
 }
