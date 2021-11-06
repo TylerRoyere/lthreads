@@ -85,6 +85,7 @@ static timer_t lthread_timer;
 /* Mask containing scheduling signal */
 static sigset_t lthread_sig_mask;
 
+/* Places thread 't' at the front of the queue */
 static void
 push_queue(struct lthread *t)
 {
@@ -96,6 +97,7 @@ push_queue(struct lthread *t)
     tail = t;
 }
 
+/* Initializes the queue with a main thread */
 static void
 init_queue(struct lthread *main_thread)
 {
@@ -103,6 +105,7 @@ init_queue(struct lthread *main_thread)
     head = tail = main_thread->next = main_thread;
 }
 
+/* Removes the first element from the queue */
 static void
 pop_queue(void)
 {
@@ -129,6 +132,10 @@ bump_queue(int rem)
     }
 }
 
+/* Gets an index that can be used to store the value of
+ * the lthread structure for a thread so it may persist
+ * after being de-scheduled
+ */
 static size_t
 allocate_lthread(void)
 {
@@ -156,25 +163,37 @@ allocate_lthread(void)
     return old_size;
 }
 
+
+/* Uses the provided index to "free" the entry used so it 
+ * may be used for another thread
+ */
 static void
 deallocate_lthread(size_t id)
 {
     lthreads[id] = NULL;
 }
 
+/* Entry point for new thread
+ */
 extern void
 lthread_run(int id)
 {
+#ifdef LTHREAD_DEBUG
     printf("LTHREAD: Starting lthread!\n");
+#endif
     UNBLOCK_SIGNAL();
     struct lthread *me = lthreads[id];
     me->status = RUNNING;
     me->data = me->start_routine(me->data);
     me->status = DONE;
+#ifdef LTHREAD_DEBUG
     printf("LTHREAD: Thread finished\n");
+#endif
     for (;;) raise(LTHREAD_SIG);
 }
 
+/* Handles freeing resources held by thread
+ */
 static void
 free_lthread(struct lthread *t)
 {
@@ -185,6 +204,9 @@ free_lthread(struct lthread *t)
     free(t);
 }
 
+/* Returns the pointer to the start of the upwards growing stack
+ * for thread 't'
+ */
 static void *
 lthread_stack_start(struct lthread *t)
 {
@@ -192,7 +214,9 @@ lthread_stack_start(struct lthread *t)
     return (void*)( ((char*)t->stack) + LTHREAD_STACK_SIZE );
 }
 
-
+/* Conditionally starts and stops the timer whose expiration
+ * sends a signal to the process therebye invoking the scheduler
+ */
 static void
 change_alarm(int turn_on)
 {
@@ -229,7 +253,9 @@ change_alarm(int turn_on)
     }
 }
 
-
+/* LTHREAD_SIG signal handler, used to handle the scheduling of
+ * threads
+ */
 static void
 lthread_alarm_handler(int num)
 {
@@ -243,6 +269,7 @@ lthread_alarm_handler(int num)
         remove_front = 1;
     }
     else {
+        /* Otherwise, save status for later */
         head->status = READY;
 
         if (getcontext(&head->context)) {
@@ -250,6 +277,8 @@ lthread_alarm_handler(int num)
             exit(EXIT_FAILURE);
         }
 
+        /* getcontext doesn't work like setjmp, need to use
+         * status flag to ensure this thread only leaves when it is chosen */
         if (head->status == RUNNING) {
             UNBLOCK_SIGNAL();
             return;
@@ -257,7 +286,9 @@ lthread_alarm_handler(int num)
         remove_front = 0;
     }
 
+    /* Find next runnable thread in the queue */
     do {
+        /* Move the list forward one (removing first element if necessary */
         bump_queue(remove_front);
         remove_front = 0;
         switch (head->status) {
@@ -279,6 +310,7 @@ lthread_alarm_handler(int num)
                 fprintf(stderr, "Invalid state %d\n", head->status);
         }
     } while (head->status != READY);
+    /* Setup thread and swap to its context */
     head->status = RUNNING;
     setcontext(&head->context);
 }
@@ -365,14 +397,17 @@ lthread_create(struct lthread *t, void *data, void *(*start_routine)(void *data)
     void *stack;
     struct lthread *new_thread;
 
+    /* Stop interrupting me! */
     BLOCK_SIGNAL();
 
+    /* Allocate space for new thread stack */
     stack = mmap(NULL, LTHREAD_STACK_SIZE,
             PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE | MAP_STACK, -1, 0);
     if (stack == MAP_FAILED) {
         perror("Failed to mmap stack space for new thread: ");
         exit(EXIT_FAILURE);
     }
+    /* Setup thread parameters */
 #ifdef LTHREAD_DEBUG
     t->stack_reg = VALGRIND_STACK_REGISTER(stack, stack + LTHREAD_STACK_SIZE);
 #endif
@@ -402,11 +437,16 @@ lthread_create(struct lthread *t, void *data, void *(*start_routine)(void *data)
     lthreads[t->id] = new_thread;
     push_queue(new_thread); /* Add thread to end of scheduling queue */
 
+    /* OK Now I'm done */
     UNBLOCK_SIGNAL();
 
     return 0;
 }
 
+/* Destroys the thread corresponding to 't'
+ * so that it is no longer scheduled, just like
+ * it no longer exists
+ */
 void
 lthread_destroy(struct lthread *t)
 {
@@ -417,9 +457,14 @@ lthread_destroy(struct lthread *t)
     lthread_join(thread, NULL);
 }
 
+/* Similar to pthread_join(), wait for the specified 
+ * thread 't' to finish working. The value returned
+ * by that thread will be placed in 'retval'
+ */
 int
 lthread_join(struct lthread *t, void **retval)
 {
+    /* Check that this is a valid thread */
     if (t->id >= nlthreads) {
         return 1;
     }
@@ -429,10 +474,12 @@ lthread_join(struct lthread *t, void **retval)
         return 1;
     }
 
+    /* Wait for the  thread to complete naturally */
     while (thread->status != DONE) {
         raise(LTHREAD_SIG);
     }
 
+    /* Save return value and deallocat resources */
     BLOCK_SIGNAL();
     if (retval != NULL) *retval = thread->data;
     deallocate_lthread(thread->id);
