@@ -20,7 +20,7 @@
 #endif
 
 #ifndef LTHREAD_ALARM_INTERVAL_NS
-#define LTHREAD_ALARM_INTERVAL_NS 50000/*(500000)*/
+#define LTHREAD_ALARM_INTERVAL_NS 500000/*(500000)*/
 #endif 
 
 #define NSEC_PER_SEC (1000000000)
@@ -61,6 +61,28 @@
 #else 
 #define UNBLOCK_SIGNAL() sigprocmask(SIG_UNBLOCK, &lthread_sig_mask, NULL)
 #define BLOCK_SIGNAL() sigprocmask(SIG_BLOCK, &lthread_sig_mask, NULL)
+#endif
+
+#ifdef LTHREAD_DEBUG
+static size_t signal_handler_inst;
+static struct timespec lthread_start;
+static struct timespec lthread_end;
+
+void lthread_debug_print_stats(void)
+{
+    double time;
+    struct timespec diff = (struct timespec) {
+        .tv_sec = lthread_end.tv_sec - lthread_start.tv_sec,
+        .tv_nsec = lthread_end.tv_nsec - lthread_start.tv_nsec,
+    };
+    if (diff.tv_nsec < 0) {
+        diff.tv_sec -= 1;
+        diff.tv_nsec += 1000000000;
+    }
+    time = (double)diff.tv_sec + ((double)diff.tv_nsec / 1000000000);
+    printf("Signal handler called %lf times per second\n",
+            ((double)signal_handler_inst) / (time));
+}
 #endif
 
 
@@ -214,6 +236,25 @@ lthread_stack_start(struct lthread_info *t)
     return (void*)( ((char*)t->stack) + LTHREAD_STACK_SIZE );
 }
 
+/* Returns non-zero if the specified thread's wake time is
+ * before the current time
+ */
+static int
+lthread_done_sleeping(struct lthread_info *t)
+{
+    struct timespec curr;
+    int done;
+    if (clock_gettime(LTHREAD_CLOCKID, &curr)) {
+        perror("Failed to get current clock time");
+        exit(EXIT_FAILURE);
+    }
+    done = (curr.tv_sec > t->wake_time.tv_sec) ||
+        ( (curr.tv_sec == t->wake_time.tv_sec) && 
+          (curr.tv_nsec >= t->wake_time.tv_nsec) );
+    return done;
+}
+
+
 /* Conditionally starts and stops the timer whose expiration
  * sends a signal to the process therebye invoking the scheduler
  */
@@ -263,6 +304,10 @@ lthread_alarm_handler(int num)
     int remove_front = 0; /* Indicated if the first entry should be removed */
     (void)num;
 
+#ifdef LTHREAD_DEBUG
+    signal_handler_inst++;
+#endif
+
     /* save current thread execution */
     if (head->status == DONE) {
         /* If the entry is done, remove it from scheduling */
@@ -270,7 +315,9 @@ lthread_alarm_handler(int num)
     }
     else {
         /* Otherwise, save status for later */
-        head->status = READY;
+        if (head->status == RUNNING) {
+            head->status = READY;
+        }
 
         if (getcontext(&head->context)) {
             perror("Failed to get context");
@@ -299,6 +346,12 @@ lthread_alarm_handler(int num)
             case RUNNING:
                 fprintf(stderr, "Thread marked running when it shouldn't be!\n");
                 break;
+            case SLEEPING:
+                if (lthread_done_sleeping(head)) {
+                    memset(&head->wake_time, 0, sizeof(head->wake_time));
+                    head->status = READY;
+                }
+                break;
             case READY:
                 break;
             case DONE:
@@ -319,12 +372,17 @@ lthread_alarm_handler(int num)
 void
 lthread_cleanup(void)
 {
+    BLOCK_SIGNAL();
     /* Delete timer */
     timer_delete(lthread_timer);
     /* Free lthreads array */
     free(lthreads);
     /* Free main thread information */
     free(head);
+#ifdef LTHREAD_DEBUG
+    clock_gettime(LTHREAD_CLOCKID, &lthread_end);
+    lthread_debug_print_stats();
+#endif
 }
 
 int lthread_init(void)
@@ -385,6 +443,10 @@ int lthread_init(void)
     /* Start scheduled signals */
     change_alarm(1);
 
+#ifdef LTHREAD_DEBUG
+    clock_gettime(LTHREAD_CLOCKID, &lthread_start);
+#endif
+
     /* Unblock lthread signal */
     UNBLOCK_SIGNAL();
 
@@ -396,7 +458,6 @@ lthread_create(lthread *t, void *(*start_routine)(void *data), void *data)
 {
     void *stack;
     struct lthread_info *new_thread;
-    size_t new_id;
 
     /* Stop interrupting me! */
     BLOCK_SIGNAL();
@@ -410,10 +471,10 @@ lthread_create(lthread *t, void *(*start_routine)(void *data), void *data)
     }
 
     /* Allocate lthread storage */
-    new_id = allocate_lthread();
     new_thread = malloc(sizeof(*new_thread));
-    lthreads[new_id] = new_thread;
-    *t = new_id;
+    new_thread->id = allocate_lthread();
+    lthreads[new_thread->id] = new_thread;
+    *t = new_thread->id;
 
     /* Setup thread parameters */
 #ifdef LTHREAD_DEBUG
@@ -483,13 +544,44 @@ lthread_join(lthread t, void **retval)
         raise(LTHREAD_SIG);
     }
 
-    /* Save return value and deallocat resources */
+    /* Save return value and deallocate resources */
     BLOCK_SIGNAL();
     if (retval != NULL) *retval = thread->data;
     deallocate_lthread(thread->id);
     free_lthread(thread);
     UNBLOCK_SIGNAL();
 
+
+    return 0;
+}
+
+int
+lthread_sleep(size_t milliseconds)
+{
+    const size_t nanoseconds = milliseconds * 1000 * 1000;
+    /* Put the current time as the sleep time */
+    if (clock_gettime(LTHREAD_CLOCKID, &head->wake_time)) {
+        perror("Failed to get current clock time");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Add the time to wait to current time */
+    head->wake_time = (struct timespec) {
+        .tv_sec = head->wake_time.tv_sec + (long) nanoseconds / NSEC_PER_SEC,
+        .tv_nsec = head->wake_time.tv_nsec + (long) nanoseconds % NSEC_PER_SEC,
+    };
+
+    /* Make sure nanoseconds value is less than 1000000000 */
+    if (head->wake_time.tv_nsec > NSEC_PER_SEC) {
+        head->wake_time.tv_sec++;
+        head->wake_time.tv_nsec -= NSEC_PER_SEC;
+    }
+
+    /* This thread is now sleeping */
+    head->status = SLEEPING;
+
+    /* Scheduler, come and take me! */
+    raise(LTHREAD_SIG);
 
     return 0;
 }

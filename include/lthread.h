@@ -11,6 +11,7 @@ enum lthread_status {
     READY,
     BLOCKED,
     DONE,
+    SLEEPING,
 };
 
 struct lthread_info {
@@ -20,6 +21,7 @@ struct lthread_info {
     ucontext_t context; /* Stored context of thread */
     void *stack; /* Pointer to end of the stack */
     size_t id; /* Allocated ID for the thread */
+    struct timespec wake_time; /* Time to awake thread from SLEEPING */
     struct lthread_info *next; /* Next thread in the queue */
 #ifdef LTHREAD_DEBUG
     /* Debug information to valgrind stops complaining */
@@ -54,5 +56,11 @@ int lthread_join(lthread t, void **retval);
  * value is not recorded
  */
 void lthread_destroy(lthread t);
+
+/* Sleeps the currently executing thread for at least 'count' milliseconds.
+ *
+ * return value is zero on success, non-zero otherwise
+ */
+int lthread_sleep(size_t milliseconds);
 
 #endif
