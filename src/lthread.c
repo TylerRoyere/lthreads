@@ -333,7 +333,7 @@ int lthread_init(void)
     /* Action to perform on LTHREAD_SIG */
     struct sigaction act = {
         .sa_handler = lthread_alarm_handler, /* Scheduling handler */
-        .sa_flags = 0/*SA_NODEFER*/, /* Can be interrupted within scheduler
+        .sa_flags = SA_RESTART/*0SA_NODEFER*/, /* Can be interrupted within scheduler
                                 -- Maybe this shouldn't be the case? */
     };
     struct sigevent event = {

@@ -6,38 +6,37 @@
 void *
 run(void *data)
 {
-    void *ret = malloc(sizeof(unsigned int));
-    printf("Thread doing things!\n");
-    for (int ii = 0; ii < 1000000; ii++) {
-        ;
+    (void)data;
+    char buffer[128];
+    fflush(stdin);
+    for (int ii = 0; ii < 5; ii++) {
+        scanf("%s", buffer);
+        buffer[127] = '\0';
+        printf("%s\n", buffer);
     }
-    printf("Thread done\n");
-    *(unsigned int*)ret= 0xDEAD0000 ^ *(unsigned int*)data;
-    return ret;
+    return NULL;
 }
 
 int
 main(int argc, char *argv[])
 {
-    struct lthread t1, t2;
-    void *retval;
+    struct lthread t1;
     unsigned int values[] = {1, 2};
     (void)argc;
     (void)argv;
     lthread_init();
 
     lthread_create(&t1, values + 0, run);
-    lthread_create(&t2, values + 1, run);
 
     printf("Main Thread doing things!\n");
 
-    lthread_join(&t1, &retval);
-    printf("Thread returned 0x%08X\n", *(unsigned int*)retval);
-    free(retval);
-    lthread_join(&t2, &retval);
-    printf("Thread returned 0x%08X\n", *(unsigned int*)retval);
-    free(retval);
+    for (int ii = 0; ii < 5; ii++) {
+        for (int jj = 0; jj < 1000000000; jj++) {
+        }
+        printf("Doing work\n");
+    }
 
+    lthread_join(&t1, NULL);
     
     return 0;
 }
