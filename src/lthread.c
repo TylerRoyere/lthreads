@@ -65,18 +65,18 @@
 
 
 void start_thread(
-        struct lthread *me,
+        struct lthread_info *me,
         void *(*start_routine)(void *),
         void *data,
         void *stack
         );
 
 /* Queue used for scheduling */
-static struct lthread *head = NULL;
-static struct lthread *tail = NULL;
+static struct lthread_info *head = NULL;
+static struct lthread_info *tail = NULL;
 
 /* Array used to store threads for return codes */
-static struct lthread **lthreads = NULL;
+static struct lthread_info **lthreads = NULL;
 static size_t nlthreads = 0;
 
 /* Timer used for signals */
@@ -87,7 +87,7 @@ static sigset_t lthread_sig_mask;
 
 /* Places thread 't' at the front of the queue */
 static void
-push_queue(struct lthread *t)
+push_queue(struct lthread_info *t)
 {
     /* We can safely assume the main 
      * thread is always running after lthread_init()
@@ -99,7 +99,7 @@ push_queue(struct lthread *t)
 
 /* Initializes the queue with a main thread */
 static void
-init_queue(struct lthread *main_thread)
+init_queue(struct lthread_info *main_thread)
 {
     /* Main thread is always running, and initializes queue */
     head = tail = main_thread->next = main_thread;
@@ -182,7 +182,7 @@ lthread_run(int id)
     printf("LTHREAD: Starting lthread!\n");
 #endif
     UNBLOCK_SIGNAL();
-    struct lthread *me = lthreads[id];
+    struct lthread_info *me = lthreads[id];
     me->status = RUNNING;
     me->data = me->start_routine(me->data);
     me->status = DONE;
@@ -195,7 +195,7 @@ lthread_run(int id)
 /* Handles freeing resources held by thread
  */
 static void
-free_lthread(struct lthread *t)
+free_lthread(struct lthread_info *t)
 {
 #ifdef LTHREAD_DEBUG
     VALGRIND_STACK_DEREGISTER(t->stack_reg);
@@ -208,7 +208,7 @@ free_lthread(struct lthread *t)
  * for thread 't'
  */
 static void *
-lthread_stack_start(struct lthread *t)
+lthread_stack_start(struct lthread_info *t)
 {
     /* Everyone knows stacks grow upward :) */
     return (void*)( ((char*)t->stack) + LTHREAD_STACK_SIZE );
@@ -329,7 +329,7 @@ lthread_cleanup(void)
 
 int lthread_init(void)
 {
-    struct lthread *new_thread;
+    struct lthread_info *new_thread;
     /* Action to perform on LTHREAD_SIG */
     struct sigaction act = {
         .sa_handler = lthread_alarm_handler, /* Scheduling handler */
@@ -392,10 +392,11 @@ int lthread_init(void)
 }
 
 int
-lthread_create(struct lthread *t, void *data, void *(*start_routine)(void *data))
+lthread_create(lthread *t, void *(*start_routine)(void *data), void *data)
 {
     void *stack;
-    struct lthread *new_thread;
+    struct lthread_info *new_thread;
+    size_t new_id;
 
     /* Stop interrupting me! */
     BLOCK_SIGNAL();
@@ -407,35 +408,37 @@ lthread_create(struct lthread *t, void *data, void *(*start_routine)(void *data)
         perror("Failed to mmap stack space for new thread: ");
         exit(EXIT_FAILURE);
     }
+
+    /* Allocate lthread storage */
+    new_id = allocate_lthread();
+    new_thread = malloc(sizeof(*new_thread));
+    lthreads[new_id] = new_thread;
+    *t = new_id;
+
     /* Setup thread parameters */
 #ifdef LTHREAD_DEBUG
-    t->stack_reg = VALGRIND_STACK_REGISTER(stack, stack + LTHREAD_STACK_SIZE);
+    new_thread->stack_reg = VALGRIND_STACK_REGISTER(stack, stack + LTHREAD_STACK_SIZE);
 #endif
     /* setup structure */
-    t->stack = stack;
-    t->start_routine = start_routine;
-    t->data = data;
-    t->status = READY;
-    t->id = allocate_lthread(); /* allocate handle for thread */
+    new_thread->stack = stack;
+    new_thread->start_routine = start_routine;
+    new_thread->data = data;
+    new_thread->status = READY;
 
     /* Use current context as starting context */
-    if (getcontext(&t->context)) {
+    if (getcontext(&new_thread->context)) {
         perror("Failed to get context");
         exit(EXIT_FAILURE);
     }
 
     /* Update current context with desired context for thread start */
-    t->context.uc_stack.ss_sp = stack;
-    t->context.uc_stack.ss_size = LTHREAD_STACK_SIZE;
-    t->context.uc_link = &head->context;
-    makecontext(&t->context, (void(*)(void))lthread_run, 1, t->id);
+    new_thread->context.uc_stack.ss_sp = stack;
+    new_thread->context.uc_stack.ss_size = LTHREAD_STACK_SIZE;
+    new_thread->context.uc_link = &head->context;
+    makecontext(&new_thread->context, (void(*)(void))lthread_run, 1, new_thread->id);
 
-    /* Copy structure to internal one, this indicated that maybe
-     * the interface needs to be a little different */
-    new_thread = malloc(sizeof(*new_thread));
-    memcpy(new_thread, t, sizeof(*new_thread));
-    lthreads[t->id] = new_thread;
-    push_queue(new_thread); /* Add thread to end of scheduling queue */
+    /* Add thread to end of scheduling queue */
+    push_queue(new_thread);
 
     /* OK Now I'm done */
     UNBLOCK_SIGNAL();
@@ -448,13 +451,14 @@ lthread_create(struct lthread *t, void *data, void *(*start_routine)(void *data)
  * it no longer exists
  */
 void
-lthread_destroy(struct lthread *t)
+lthread_destroy(lthread t)
 {
     BLOCK_SIGNAL();
-    struct lthread *thread = lthreads[t->id];
+    /* TODO: Check if valid ID before using */
+    struct lthread_info *thread = lthreads[t];
     thread->status = DONE;
     UNBLOCK_SIGNAL();
-    lthread_join(thread, NULL);
+    lthread_join(t, NULL);
 }
 
 /* Similar to pthread_join(), wait for the specified 
@@ -462,14 +466,14 @@ lthread_destroy(struct lthread *t)
  * by that thread will be placed in 'retval'
  */
 int
-lthread_join(struct lthread *t, void **retval)
+lthread_join(lthread t, void **retval)
 {
     /* Check that this is a valid thread */
-    if (t->id >= nlthreads) {
+    if (t >= nlthreads) {
         return 1;
     }
 
-    struct lthread *thread = lthreads[t->id];
+    struct lthread_info *thread = lthreads[t];
     if (thread == NULL) {
         return 1;
     }

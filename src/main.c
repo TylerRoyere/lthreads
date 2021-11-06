@@ -20,13 +20,13 @@ run(void *data)
 int
 main(int argc, char *argv[])
 {
-    struct lthread t1;
+    lthread t1;
     unsigned int values[] = {1, 2};
     (void)argc;
     (void)argv;
     lthread_init();
 
-    lthread_create(&t1, values + 0, run);
+    lthread_create(&t1, run, values + 0);
 
     printf("Main Thread doing things!\n");
 
@@ -36,7 +36,7 @@ main(int argc, char *argv[])
         printf("Doing work\n");
     }
 
-    lthread_join(&t1, NULL);
+    lthread_join(t1, NULL);
     
     return 0;
 }
