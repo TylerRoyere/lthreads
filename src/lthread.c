@@ -10,6 +10,7 @@
 
 #include <unistd.h>
 #include <signal.h>
+#include <ucontext.h>
 
 #include <sys/mman.h>
 #include <sys/time.h>
@@ -19,7 +20,7 @@
 #endif
 
 #ifndef LTHREAD_ALARM_INTERVAL_NS
-#define LTHREAD_ALARM_INTERVAL_NS (500)
+#define LTHREAD_ALARM_INTERVAL_NS 50000/*(500000)*/
 #endif 
 
 #define NSEC_PER_SEC (1000000000)
@@ -162,18 +163,16 @@ deallocate_lthread(size_t id)
 }
 
 extern void
-lthread_run(
-        struct lthread *me,
-        void *(*start_routine)(void *),
-        void *data
-        )
+lthread_run(int id)
 {
-    printf("Starting lthread!\n");
+    printf("LTHREAD: Starting lthread!\n");
+    UNBLOCK_SIGNAL();
+    struct lthread *me = lthreads[id];
     me->status = RUNNING;
-    me->data = start_routine(data);
+    me->data = me->start_routine(me->data);
     me->status = DONE;
-    printf("Thread finished\n");
-    for (;;);
+    printf("LTHREAD: Thread finished\n");
+    for (;;) raise(LTHREAD_SIG);
 }
 
 static void
@@ -246,11 +245,15 @@ lthread_alarm_handler(int num)
     else {
         head->status = READY;
 
-        if (sigsetjmp(head->context, 1) == 1) {
+        if (getcontext(&head->context)) {
+            perror("Failed to get context");
+            exit(EXIT_FAILURE);
+        }
+
+        if (head->status == RUNNING) {
             UNBLOCK_SIGNAL();
             return;
         }
-
         remove_front = 0;
     }
 
@@ -276,7 +279,8 @@ lthread_alarm_handler(int num)
                 fprintf(stderr, "Invalid state %d\n", head->status);
         }
     } while (head->status != READY);
-    siglongjmp(head->context, 1);
+    head->status = RUNNING;
+    setcontext(&head->context);
 }
 
 /* Cleans up the environment when exiting */
@@ -334,7 +338,13 @@ int lthread_init(void)
     new_thread = malloc(sizeof(*new_thread));
     new_thread->status = RUNNING;
     new_thread->id = LTHREAD_MAIN_THREAD;
-    sigsetjmp(new_thread->context, 1);
+
+    /* Setup main threads context as current context */
+    if (getcontext(&new_thread->context)) {
+        perror("Failed to get context");
+        exit(EXIT_FAILURE);
+    }
+
     init_queue(new_thread);
 
     /* Add cleanup function run at exit() */
@@ -363,16 +373,27 @@ lthread_create(struct lthread *t, void *data, void *(*start_routine)(void *data)
         perror("Failed to mmap stack space for new thread: ");
         exit(EXIT_FAILURE);
     }
-#ifdef LTHRAED_DEBUG
+#ifdef LTHREAD_DEBUG
     t->stack_reg = VALGRIND_STACK_REGISTER(stack, stack + LTHREAD_STACK_SIZE);
 #endif
     /* setup structure */
     t->stack = stack;
     t->start_routine = start_routine;
     t->data = data;
-    t->status = CREATED;
+    t->status = READY;
     t->id = allocate_lthread(); /* allocate handle for thread */
-    sigsetjmp(t->context, 1);
+
+    /* Use current context as starting context */
+    if (getcontext(&t->context)) {
+        perror("Failed to get context");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Update current context with desired context for thread start */
+    t->context.uc_stack.ss_sp = stack;
+    t->context.uc_stack.ss_size = LTHREAD_STACK_SIZE;
+    t->context.uc_link = &head->context;
+    makecontext(&t->context, (void(*)(void))lthread_run, 1, t->id);
 
     /* Copy structure to internal one, this indicated that maybe
      * the interface needs to be a little different */
@@ -409,7 +430,7 @@ lthread_join(struct lthread *t, void **retval)
     }
 
     while (thread->status != DONE) {
-        //raise(LTHREAD_SIG)
+        raise(LTHREAD_SIG);
     }
 
     BLOCK_SIGNAL();
