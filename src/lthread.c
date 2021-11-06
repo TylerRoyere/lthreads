@@ -372,6 +372,7 @@ lthread_alarm_handler(int num)
 void
 lthread_cleanup(void)
 {
+    BLOCK_SIGNAL();
     /* Delete timer */
     timer_delete(lthread_timer);
     /* Free lthreads array */
