@@ -8,7 +8,7 @@ run(void *data)
 {
     void *ret = malloc(sizeof(unsigned int));
     printf("Thread doing things!\n");
-    for (int ii = 0; ii < 1000000000; ii++) {
+    for (int ii = 0; ii < 1000000; ii++) {
         ;
     }
     printf("Thread done\n");
@@ -33,8 +33,10 @@ main(int argc, char *argv[])
 
     lthread_join(&t1, &retval);
     printf("Thread returned 0x%08X\n", *(unsigned int*)retval);
+    free(retval);
     lthread_join(&t2, &retval);
     printf("Thread returned 0x%08X\n", *(unsigned int*)retval);
+    free(retval);
 
     
     return 0;
