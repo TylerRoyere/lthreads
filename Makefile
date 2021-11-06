@@ -39,7 +39,7 @@ $(OBJ_DIR)/%.o: %.S | $(OBJ_DIR)
 $(OBJ_DIR):
 	mkdir -p $(OBJ_DIR)
 
-valgrind: CFLAGS += -g -O0 -DLTHREADS_DEBUG
+valgrind: CFLAGS += -g -O0 -DLTHREAD_DEBUG
 valgrind: clean main
 	valgrind ./main
 
