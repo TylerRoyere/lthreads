@@ -1,3 +1,10 @@
+# Developer environment
+compile_commands.json
+.clangd/
+
+# Executables
+main
+
 # Prerequisites
 *.d
 
