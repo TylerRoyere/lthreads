@@ -176,7 +176,7 @@ allocate_lthread(void)
 
     /* None were found, we need to allocate more */
     old_size = nlthreads;
-    nlthreads += 2;
+    nlthreads *= 2;
     lthreads = realloc(lthreads, sizeof(*lthreads) * nlthreads);
 
     /* Clear newly allocated return codes since they may not be 0 */
