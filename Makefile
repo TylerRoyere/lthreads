@@ -48,6 +48,9 @@ test_produce_consume: test/produce_consume.c $(MAIN_OBJS)
 test_many_threads: test/many_threads.c $(MAIN_OBJS)
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(INCLUDES)
 
+test_blocking: test/blocking.c $(MAIN_OBJS)
+	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(INCLUDES)
+
 debug: CFLAGS += -g -O0 -DLTHREAD_DEBUG
 debug: main
 
@@ -55,4 +58,4 @@ valgrind: clean debug
 	valgrind ./main
 
 clean:
-	rm -rf $(OBJ_DIR)/* $(TARGETS) test_io produce_consume test_many_threads
+	rm -rf $(OBJ_DIR)/* $(TARGETS) test_io produce_consume test_many_threads test_blocking
