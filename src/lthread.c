@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <string.h>
 #include <time.h>
+#include <stdatomic.h>
 
 #include <unistd.h>
 #include <signal.h>
@@ -106,6 +107,12 @@ static timer_t lthread_timer;
 
 /* Mask containing scheduling signal */
 static sigset_t lthread_sig_mask;
+
+/* atomic flag value where that indicates one lthread is
+ * inside a signal-safe environment
+ */
+atomic_flag lthread_safe_flag = ATOMIC_FLAG_INIT;
+
 
 /* Places thread 't' at the front of the queue */
 static void
@@ -610,4 +617,18 @@ int
 lthread_unblock(void)
 {
     return UNBLOCK_SIGNAL();
+}
+
+int
+lthread_atomic_set(void)
+{
+    while (atomic_flag_test_and_set(&lthread_safe_flag)) raise(LTHREAD_SIG);
+    return 1;
+}
+
+int
+lthread_atomic_clear(void)
+{
+    atomic_flag_clear(&lthread_safe_flag);
+    return 1;
 }
