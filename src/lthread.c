@@ -610,13 +610,21 @@ lthread_yield(void)
 int
 lthread_block(void)
 {
+#ifdef LTHREAD_SAFE_USE_LTHREAD_BLOCK
     return BLOCK_SIGNAL();
+#else
+    return lthread_atomic_set();
+#endif
 }
 
 int
 lthread_unblock(void)
 {
+#ifdef LTHREAD_SAFE_USE_LTHREAD_BLOCK
     return UNBLOCK_SIGNAL();
+#else
+    return lthread_atomic_clear();
+#endif
 }
 
 int
