@@ -85,7 +85,7 @@ void lthread_debug_print_stats(void)
 }
 #endif
 
-
+/* TODO: remove start_thread? */
 void start_thread(
         struct lthread_info *me,
         void *(*start_routine)(void *),
@@ -226,6 +226,7 @@ free_lthread(struct lthread_info *t)
     free(t);
 }
 
+/* TODO: Is this function needed anymore? */
 /* Returns the pointer to the start of the upwards growing stack
  * for thread 't'
  */
@@ -254,7 +255,7 @@ lthread_done_sleeping(struct lthread_info *t)
     return done;
 }
 
-
+/* TODO: Is this function really needed anymore */
 /* Conditionally starts and stops the timer whose expiration
  * sends a signal to the process therebye invoking the scheduler
  */
@@ -285,6 +286,9 @@ change_alarm(int turn_on)
     };
 
     if (turn_on) {
+        /* TODO: off structure might be populated with garbage
+         * that was the old configuration of the timer when this
+         * is first called */
         /* Turn the timer on */
         timer_settime(lthread_timer, 0, &on, &off);
     }
@@ -300,6 +304,7 @@ change_alarm(int turn_on)
 static void
 lthread_alarm_handler(int num)
 {
+    /* TODO: Is this block needed? */
     BLOCK_SIGNAL();
     int remove_front = 0; /* Indicated if the first entry should be removed */
     (void)num;
@@ -338,6 +343,7 @@ lthread_alarm_handler(int num)
         /* Move the list forward one (removing first element if necessary */
         bump_queue(remove_front);
         remove_front = 0;
+        /* TODO: Are all these statuses needed? */
         switch (head->status) {
             case CREATED:
                 UNBLOCK_SIGNAL();
@@ -415,6 +421,7 @@ int lthread_init(void)
         exit(EXIT_FAILURE);
     }
 
+    /* TODO: Is this where blocking should start? */
     /* block lthread signal */
     BLOCK_SIGNAL();
 
@@ -459,6 +466,7 @@ lthread_create(lthread *t, void *(*start_routine)(void *data), void *data)
     void *stack;
     struct lthread_info *new_thread;
 
+    /* TODO: Should blocking start here? */
     /* Stop interrupting me! */
     BLOCK_SIGNAL();
 
