@@ -47,6 +47,7 @@ int main(int argc, char *argv[])
         else {
             printf("[%d] = %d\n", ii, *temp);
         }
+        free(temp);
     }
 
     return 0;
