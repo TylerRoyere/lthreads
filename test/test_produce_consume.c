@@ -105,6 +105,7 @@ consume(void *data)
         n = strlen(curr->content);
         /* Allocate more space if necessary */
         if (n + used + 1 > size) {
+            size += n + 1;
             size *= 2;
             buffer = realloc(buffer, size);
         }
