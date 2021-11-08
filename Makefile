@@ -19,8 +19,9 @@ MAIN_SRCS := src/lthread.c
 MAIN_ASM_SRCS := src/start_thread.S
 MAIN_OBJS := $(call src_to_objs, $(MAIN_SRCS), $(OBJ_DIR))
 MAIN_OBJS += $(call asm_src_to_objs, $(MAIN_ASM_SRCS), $(OBJ_DIR))
+TESTS := test_io test_produce_consume test_many_threads test_blocking
 
-.PHONY: clean valgrind debug
+.PHONY: clean valgrind debug tests
 
 all: $(TARGETS)
 
@@ -39,16 +40,9 @@ $(OBJ_DIR)/%.o: %.S | $(OBJ_DIR)
 $(OBJ_DIR):
 	mkdir -p $(OBJ_DIR)
 
-test_io: test/test_io.c $(MAIN_OBJS)
-	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(INCLUDES)
+tests: $(TESTS)
 
-test_produce_consume: test/produce_consume.c $(MAIN_OBJS)
-	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(INCLUDES)
-
-test_many_threads: test/many_threads.c $(MAIN_OBJS)
-	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(INCLUDES)
-
-test_blocking: test/blocking.c $(MAIN_OBJS)
+%: test/%.c $(MAIN_OBJS)
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(INCLUDES)
 
 debug: CFLAGS += -g -O0 -DLTHREAD_DEBUG
@@ -58,4 +52,4 @@ valgrind: clean debug
 	valgrind ./main
 
 clean:
-	rm -rf $(OBJ_DIR)/* $(TARGETS) test_io produce_consume test_many_threads test_blocking
+	rm -rf $(OBJ_DIR)/* $(TARGETS) $(TESTS)
