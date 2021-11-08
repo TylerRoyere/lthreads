@@ -1,0 +1,37 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: make
+      run: make
+    - name: make tests
+      run: make tests
+    - name: get valgrind
+      run: sudo apt install -y valgrind
+    - name: run test_blocking
+      run: ./test_blocking
+    - name: valgrind test_blocking
+      run: valgrind --error-exitcode=1 --leak-check=full --track-origins=yes ./test_blocking
+    - name: run test_io
+      run: ./test_io
+    - name: valgrind test_io
+      run: valgrind --error-exitcode=1 --leak-check=full --track-origins=yes ./test_io
+    - name: run test_many_threads
+      run: ./test_many_threads
+    - name: valgrind test_many_threads
+      run: valgrind --error-exitcode=1 --leak-check=full --track-origins=yes ./test_many_threads
+    - name: run test_produce_consume
+      run: ./test_produce_consume
+    - name: valgrind test_produce_consume
+      run: valgrind --error-exitcode=1 --leak-check=full --track-origins=yes ./test_produce_consume
