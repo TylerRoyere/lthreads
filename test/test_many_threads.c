@@ -10,7 +10,8 @@ void *
 add_things(void *data)
 {
     int increment = *(int *)data;
-    int *retval = malloc(sizeof(int));
+    int *retval;
+    LTHREAD_SAFE retval  = malloc(sizeof(int));
 
     for (int itr = 0; itr < REPEATS; itr++) {
         *retval = 0;
@@ -39,7 +40,7 @@ int main(int argc, char *argv[])
     for (int ii = 0; ii < NUM_THREADS; ii++) {
         int expected = (ii * ADD_TIMES);
         lthread_join(threads[ii], (void**)&temp);
-        if (*temp != expected) {
+        LTHREAD_SAFE if (*temp != expected) {
             printf("[%d] %d != %d\n",
                     ii, *temp, expected);
             return 1;
@@ -47,7 +48,7 @@ int main(int argc, char *argv[])
         else {
             printf("[%d] = %d\n", ii, *temp);
         }
-        free(temp);
+        LTHREAD_SAFE free(temp);
     }
 
     return 0;

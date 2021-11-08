@@ -5,6 +5,34 @@
 #include <setjmp.h>
 #include <ucontext.h>
 
+/* Starts a block of code that is safe from signal preemption,
+ * after the block completes preemption will start again.
+ *
+ * This crucial to use when calling async-signal-unsafe
+ * functions because all program execution after lthread_init()
+ * is essentially inside a signal handler. All functions that
+ * are async-signal-unsafe need to be wrapped in an LTHREAD_SAFE
+ * block or an lthread 'blocked' context to ensure your program
+ * behaves as you expect.
+ *
+ * see signal-safety(7) for more information and a list of
+ * posix defined signal-safe functions. Note that many
+ * posix I/O functions are signal-safe while C library
+ * functions are not. Using posix I/O functions can allow
+ * more flexibilty to perform things in "parallel".
+ *
+ * it is equivalent to
+ * lthread_block(); {code block;} lthread_unblock();
+ *
+ * These do not nest. It probably wont work like you expect.
+ * why would one want to nest these anyway?
+ */
+#define LTHREAD_SAFE \
+    for (int lthread_safe_go_once__ = 1; \
+        (lthread_safe_go_once__ && (lthread_block() || 1)) || \
+        (lthread_safe_go_once__ || (lthread_unblock() && 0)); \
+        lthread_safe_go_once__ = 0)
+
 /* TODO: Are all these statuses really needed */
 enum lthread_status {
     CREATED = 0,

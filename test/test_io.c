@@ -38,29 +38,35 @@ read_file_to_str_job(void *data)
     const char *filename = (const char *)data;
     size_t size = 128, used = 0, n = 0;
     FILE *file;
-    char *buffer = calloc(size, sizeof(char));
+    char *buffer;
 
-    printf("Opening file %s for reading\n", filename);
-    file = fopen(filename, "r");
-    if (file == NULL) {
-        perror("Failed to open file for reading");
-        return NULL;
+    LTHREAD_SAFE {
+        buffer = calloc(size, sizeof(char));
+
+        printf("Opening file %s for reading\n", filename);
+        file = fopen(filename, "r");
+        if (file == NULL) {
+            perror("Failed to open file for reading");
+            return NULL;
+        }
     }
 
-    while ( (n = fread(buffer+used, sizeof(char), size-used, file)) ) {
+    LTHREAD_SAFE n = fread(buffer+used, sizeof(char), size-used, file);
+    while (n) LTHREAD_SAFE {
         used += n;
         if (used == size) {
             buffer = realloc(buffer, size * 2);
             memset(buffer + size, 0, size);
             size *= 2;
         }
+        n = fread(buffer+used, sizeof(char), size-used, file);
     }
 
-    if (ferror(file)) {
+    LTHREAD_SAFE if (ferror(file)) {
         perror("fread ended with error");
     }
 
-    if (fclose(file) == EOF) {
+    LTHREAD_SAFE if (fclose(file) == EOF) {
         perror("Failed to close input file");
     }
     return buffer;
@@ -79,23 +85,27 @@ write_str_to_file_job(void *data)
     const char *contents = info->contents;
     FILE *file; 
     size_t size = strlen(contents) + 1, written = 0;
-    printf("Opening file %s for writing\n", filename);
-    file = fopen(filename, "w");
-    if (file == NULL) {
-        perror("Failed to open file to writing");
-        return NULL;
+    LTHREAD_SAFE {
+        printf("Opening file %s for writing\n", filename);
+        file = fopen(filename, "w");
+        if (file == NULL) {
+            perror("Failed to open file to writing");
+            return NULL;
+        }
     }
 
-    written = fwrite(contents, sizeof(char), size, file);
+    LTHREAD_SAFE written = fwrite(contents, sizeof(char), size, file);
 
-    if (written < size) {
-        perror("Bytes written was fewer than content length");
-        return NULL;
-    }
+    LTHREAD_SAFE {
+        if (written < size) {
+            perror("Bytes written was fewer than content length");
+            return NULL;
+        }
 
-    if (fclose(file) == EOF) {
-        perror("Failed to close output file");
-        return NULL;
+        if (fclose(file) == EOF) {
+            perror("Failed to close output file");
+            return NULL;
+        }
     }
 
     return (void*)1;
@@ -122,7 +132,7 @@ main(int argc, char *argv[])
 
     lthread_join(t, &retval);
     if (retval == NULL) {
-        printf("write_str_to_file_job failed\n");
+        LTHREAD_SAFE printf("write_str_to_file_job failed\n");
         return 1;
     }
 
@@ -130,7 +140,7 @@ main(int argc, char *argv[])
 
     lthread_join(t, (void**)&text);
 
-    if (text != NULL) {
+    LTHREAD_SAFE if (text != NULL) {
         printf("%s\n", text);
         if (strncmp(text, content, content_length) != 0) {
             printf("Content and read text don't match\n");
@@ -141,7 +151,7 @@ main(int argc, char *argv[])
         printf("read_file_to_str_job failed\n");
         return 1;
     }
-    free(text);
+    LTHREAD_SAFE free(text);
 
     if (remove(filename)) {
         perror("Failed to remove file");

@@ -53,34 +53,36 @@ produce(void *data)
     struct list **curr = &queue, *temp;
 
     /* Start off by allocating first node and starting tokenization */
-    temp = calloc(1, sizeof(*temp));
-    line = strtok(text, "\n");
+    LTHREAD_SAFE temp = calloc(1, sizeof(*temp));
+    LTHREAD_SAFE line = strtok(text, "\n");
 
     /* While there are content lines left */
     while ( line != NULL ) {
-        /* Copy content */
-        temp->content = strdup(line);
+        LTHREAD_SAFE {
+            /* Copy content */
+            temp->content = strdup(line);
 
-        /* Update previous node->next to point to new node */
-        *curr = temp;
-        /* Move previous node->next new node next pointer */
-        curr = &temp->next;
+            /* Update previous node->next to point to new node */
+            *curr = temp;
+            /* Move previous node->next new node next pointer */
+            curr = &temp->next;
 
-        /* Allocate new node */
-        temp = calloc(1, sizeof(*temp));
-        
+            /* Allocate new node */
+            temp = calloc(1, sizeof(*temp));
+        }
+            
         /* Yield to be consumed */
         lthread_yield();
 
         /* Get next line */
-        line = strtok(NULL, "\n");
+        LTHREAD_SAFE line = strtok(NULL, "\n");
     }
 
     /* Mark end of input */
     temp->content = NULL;
     *curr = temp;
 
-    free(text);
+    LTHREAD_SAFE free(text);
 
     return NULL;
 }
@@ -91,7 +93,7 @@ consume(void *data)
     (void)data;
 
     size_t size = 128, used = 0, n = 0;
-    char *buffer = calloc(size, sizeof(char));
+    char *buffer; LTHREAD_SAFE buffer = calloc(size, sizeof(char));
 
     /* Wait for producer to start putting stuff in queue */
     while (queue == NULL) ;
@@ -107,7 +109,7 @@ consume(void *data)
         if (n + used + 1 > size) {
             size += n + 1;
             size *= 2;
-            buffer = realloc(buffer, size);
+            LTHREAD_SAFE buffer = realloc(buffer, size);
         }
         strncat(buffer, curr->content, n);
         strncat(buffer, "\n", 2);
@@ -121,12 +123,14 @@ consume(void *data)
         curr = curr->next;
 
         /* Free entry that was just processed */
-        free(last->content);
-        free(last);
+        LTHREAD_SAFE {
+            free(last->content);
+            free(last);
+        }
     }
 
     /* Free last entry */
-    free(curr);
+    LTHREAD_SAFE free(curr);
 
     /* Ensure the output is null terminated */
     buffer[used] = '\0';
@@ -150,14 +154,16 @@ int main(int argc, char *argv[])
     lthread_join(producer, NULL);
     lthread_join(consumer, (void**)&text);
 
-    printf("%s\n", text);
+    LTHREAD_SAFE {
+        printf("%s\n", text);
 
-    if (strcmp(text, content) != 0) {
-        printf("Content doesn't match consumer output\n");
-        return 1;
+        if (strcmp(text, content) != 0) {
+            printf("Content doesn't match consumer output\n");
+            return 1;
+        }
+
+        free(text);
     }
-
-    free(text);
 
     return 0;
 }

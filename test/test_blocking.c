@@ -10,8 +10,7 @@ void *
 add(void *data)
 {
     (void) data;
-    for (size_t ii = 0; ii < NUM_ADDS; ii++) {
-        lthread_block();
+    for (size_t ii = 0; ii < NUM_ADDS; ii++) LTHREAD_SAFE {
         sum++;
         sum--;
         sum++;
@@ -37,7 +36,6 @@ add(void *data)
         sum++;
         sum--;
         sum++;
-        lthread_unblock();
     }
 
     return NULL;
@@ -59,7 +57,7 @@ int main(int argc, char *argv[])
         lthread_join(threads[ii], NULL);
     }
 
-    if (sum != (NUM_ADDS * NUM_THREADS)) {
+    LTHREAD_SAFE if (sum != (NUM_ADDS * NUM_THREADS)) {
         printf("Sum %zu doesn't match expected %zu\n", 
                 sum, (size_t)NUM_ADDS * NUM_THREADS);
         return 1;
