@@ -63,4 +63,9 @@ void lthread_destroy(lthread t);
  */
 int lthread_sleep(size_t milliseconds);
 
+/* Yeilds the execution of the current lthread so that another lthread
+ * may begin execution. returns non-zero on failure
+ */
+int lthread_yield(void);
+
 #endif

@@ -585,3 +585,9 @@ lthread_sleep(size_t milliseconds)
 
     return 0;
 }
+
+int
+lthread_yield(void)
+{
+    return raise(LTHREAD_SIG);
+}
