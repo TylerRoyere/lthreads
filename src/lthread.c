@@ -529,12 +529,12 @@ lthread_create(lthread *t, void *(*start_routine)(void *data), void *data)
 void
 lthread_destroy(lthread t)
 {
-    BLOCK_SIGNAL();
     /* TODO: Check if valid ID before using */
-    struct lthread_info *thread = lthreads[t];
-    thread->status = DONE;
-    UNBLOCK_SIGNAL();
-    lthread_join(t, NULL);
+    LTHREAD_SAFE {
+        struct lthread_info *thread = lthreads[t];
+        thread->status = DONE;
+        lthread_join(t, NULL);
+    }
 }
 
 /* Similar to pthread_join(), wait for the specified 
@@ -560,11 +560,11 @@ lthread_join(lthread t, void **retval)
     }
 
     /* Save return value and deallocate resources */
-    BLOCK_SIGNAL();
-    if (retval != NULL) *retval = thread->data;
-    deallocate_lthread(thread->id);
-    free_lthread(thread);
-    UNBLOCK_SIGNAL();
+    LTHREAD_SAFE {
+        if (retval != NULL) *retval = thread->data;
+        deallocate_lthread(thread->id);
+        free_lthread(thread);
+    }
 
 
     return 0;
