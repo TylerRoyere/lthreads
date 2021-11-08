@@ -591,3 +591,15 @@ lthread_yield(void)
 {
     return raise(LTHREAD_SIG);
 }
+
+int
+lthread_block(void)
+{
+    return BLOCK_SIGNAL();
+}
+
+int
+lthread_unblock(void)
+{
+    return UNBLOCK_SIGNAL();
+}

@@ -8,6 +8,7 @@ main
 test_io
 test_produce_consume
 test_many_threads
+test_blocking
 
 # Prerequisites
 *.d
