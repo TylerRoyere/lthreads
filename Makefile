@@ -19,7 +19,7 @@ MAIN_SRCS := src/lthread.c
 MAIN_ASM_SRCS := src/start_thread.S
 MAIN_OBJS := $(call src_to_objs, $(MAIN_SRCS), $(OBJ_DIR))
 MAIN_OBJS += $(call asm_src_to_objs, $(MAIN_ASM_SRCS), $(OBJ_DIR))
-TESTS := test_io test_produce_consume test_many_threads test_blocking
+TESTS := test_io test_produce_consume test_many_threads test_blocking test_thrash
 
 .PHONY: clean valgrind debug tests
 
