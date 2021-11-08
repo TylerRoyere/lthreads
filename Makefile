@@ -46,7 +46,7 @@ tests: $(TESTS)
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(INCLUDES)
 
 debug: CFLAGS += -g -O0 -DLTHREAD_DEBUG
-debug: main
+debug: main $(TESTS)
 
 valgrind: clean debug
 	valgrind ./main
