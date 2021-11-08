@@ -223,7 +223,7 @@ free_lthread(struct lthread_info *t)
     VALGRIND_STACK_DEREGISTER(t->stack_reg);
 #endif
     munmap(t->stack, LTHREAD_STACK_SIZE);
-    //free(t);
+    free(t);
 }
 
 /* Returns the pointer to the start of the upwards growing stack
