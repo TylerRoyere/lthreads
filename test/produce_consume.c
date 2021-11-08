@@ -91,7 +91,7 @@ consume(void *data)
     (void)data;
 
     size_t size = 128, used = 0, n = 0;
-    char *buffer = malloc(size);
+    char *buffer = calloc(size, sizeof(char));
 
     /* Wait for producer to start putting stuff in queue */
     while (queue == NULL) ;
