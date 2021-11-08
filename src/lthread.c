@@ -596,7 +596,6 @@ int
 lthread_block(void)
 {
     return BLOCK_SIGNAL();
-    return 0;
 }
 
 int
