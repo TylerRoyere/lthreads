@@ -376,9 +376,9 @@ lthread_cleanup(void)
     /* Delete timer */
     timer_delete(lthread_timer);
     /* Free lthreads array */
-    //free(lthreads);
+    free(lthreads);
     /* Free main thread information */
-    //free(head);
+    free(head);
 #ifdef LTHREAD_DEBUG
     clock_gettime(LTHREAD_CLOCKID, &lthread_end);
     lthread_debug_print_stats();
