@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <setjmp.h>
 #include <ucontext.h>
+#include <stdatomic.h>
 
 /* Starts a block of code that is safe from signal preemption,
  * after the block completes preemption will start again.
@@ -32,6 +33,14 @@
         (lthread_safe_go_once__ && (lthread_block() || 1)) || \
         (lthread_safe_go_once__ || (lthread_unblock() && 0)); \
         lthread_safe_go_once__ = 0)
+
+#define LTHREAD_SAFE_ATOMIC \
+    for (int lthread_safe_go_once__ = 1; \
+            (lthread_safe_go_once__ && lthread_atomic_set() ) || \
+            (lthread_safe_go_once__ || !lthread_atomic_clear()); \
+            lthread_safe_go_once__ = 0)
+
+
 
 /* TODO: Are all these statuses really needed */
 enum lthread_status {
@@ -121,5 +130,8 @@ int lthread_block(void);
  * return is non-zero for success
  */
 int lthread_unblock(void);
+
+int lthread_atomic_set(void);
+int lthread_atomic_clear(void);
 
 #endif
