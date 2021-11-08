@@ -39,6 +39,15 @@ $(OBJ_DIR)/%.o: %.S | $(OBJ_DIR)
 $(OBJ_DIR):
 	mkdir -p $(OBJ_DIR)
 
+test_io: test/test_io.c $(MAIN_OBJS)
+	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(INCLUDES)
+
+test_produce_consume: test/produce_consume.c $(MAIN_OBJS)
+	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(INCLUDES)
+
+test_many_threads: test/many_threads.c $(MAIN_OBJS)
+	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS) $(INCLUDES)
+
 debug: CFLAGS += -g -O0 -DLTHREAD_DEBUG
 debug: main
 
@@ -46,4 +55,4 @@ valgrind: clean debug
 	valgrind ./main
 
 clean:
-	rm -rf $(OBJ_DIR)/* $(TARGETS)
+	rm -rf $(OBJ_DIR)/* $(TARGETS) test_io produce_consume test_many_threads

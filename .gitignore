@@ -1,9 +1,13 @@
 # Developer environment
 compile_commands.json
 .clangd/
+*.swp
 
 # Executables
 main
+test_io
+test_produce_consume
+test_many_threads
 
 # Prerequisites
 *.d
