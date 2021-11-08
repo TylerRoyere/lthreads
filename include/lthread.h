@@ -28,18 +28,24 @@
  * These do not nest. It probably wont work like you expect.
  * why would one want to nest these anyway?
  */
+
+#ifdef LTHREAD_SAFE_USE_LTHREAD_BLOCK
+
 #define LTHREAD_SAFE \
     for (int lthread_safe_go_once__ = 1; \
         (lthread_safe_go_once__ && (lthread_block() || 1)) || \
         (lthread_safe_go_once__ || (lthread_unblock() && 0)); \
         lthread_safe_go_once__ = 0)
 
-#define LTHREAD_SAFE_ATOMIC \
+#else
+
+#define LTHREAD_SAFE \
     for (int lthread_safe_go_once__ = 1; \
             (lthread_safe_go_once__ && lthread_atomic_set() ) || \
             (lthread_safe_go_once__ || !lthread_atomic_clear()); \
             lthread_safe_go_once__ = 0)
 
+#endif /* LTHREAD_SAFE_USE_LTHREAD_BLOCK */
 
 
 /* TODO: Are all these statuses really needed */
