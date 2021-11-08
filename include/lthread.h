@@ -5,6 +5,7 @@
 #include <setjmp.h>
 #include <ucontext.h>
 
+/* TODO: Are all these statuses really needed */
 enum lthread_status {
     CREATED = 0,
     RUNNING,
