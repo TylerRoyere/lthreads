@@ -49,6 +49,8 @@ int lthread_create(lthread *t, void *(*start_routine)(void *data), void *data);
 /* Waits for a thread 't' to complete execution. The return value of
  * that instance of 'start_routine' will be saved in 'retval' if
  * 'retval' is not NULL
+ *
+ * Probably shouldn't use this while scheduling is blocked
  */
 int lthread_join(lthread t, void **retval);
 
@@ -60,12 +62,35 @@ void lthread_destroy(lthread t);
 /* Sleeps the currently executing thread for at least 'count' milliseconds.
  *
  * return value is zero on success, non-zero otherwise
+ *
+ * This does nothing wile scheduling is blocked
  */
 int lthread_sleep(size_t milliseconds);
 
 /* Yeilds the execution of the current lthread so that another lthread
  * may begin execution. returns non-zero on failure
+ *
+ * This does nothing while scheduling is blocked
  */
 int lthread_yield(void);
+
+/* Stops preemption of the currently executing thread. This thread's
+ * context will no be swapped out, no other threads will be scheduled.
+ *
+ * Similar to a mutex, this is an important synchronization mechanism
+ * for lthreads. Blocking the preemption of this thread can ensure that
+ * updates to a shared structure have strict ordering requirements
+ *
+ * return is non-zero for succes
+ */
+int lthread_block(void);
+
+/* Similar to lthread_block, but starts the preemption of the currently
+ * executing thread. This thread's context can be swapped out, other 
+ * threads may be scheduled.
+ *
+ * return is non-zero for success
+ */
+int lthread_unblock(void);
 
 #endif
