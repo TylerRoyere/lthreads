@@ -476,48 +476,51 @@ lthread_create(lthread *t, void *(*start_routine)(void *data), void *data)
     /* TODO: Should blocking start here? */
     /* Stop interrupting me! */
     BLOCK_SIGNAL();
+    LTHREAD_SAFE {
 
-    /* Allocate space for new thread stack */
-    stack = mmap(NULL, LTHREAD_STACK_SIZE,
-            PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE | MAP_STACK, -1, 0);
-    if (stack == MAP_FAILED) {
-        perror("Failed to mmap stack space for new thread: ");
-        exit(EXIT_FAILURE);
-    }
+        /* Allocate space for new thread stack */
+        stack = mmap(NULL, LTHREAD_STACK_SIZE,
+                PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE | MAP_STACK, -1, 0);
+        if (stack == MAP_FAILED) {
+            perror("Failed to mmap stack space for new thread: ");
+            exit(EXIT_FAILURE);
+        }
 
-    /* Allocate lthread storage */
-    new_thread = malloc(sizeof(*new_thread));
-    new_thread->id = allocate_lthread();
-    lthreads[new_thread->id] = new_thread;
-    *t = new_thread->id;
+        /* Allocate lthread storage */
+        new_thread = malloc(sizeof(*new_thread));
+        new_thread->id = allocate_lthread();
+        lthreads[new_thread->id] = new_thread;
+        *t = new_thread->id;
 
-    /* Setup thread parameters */
+        /* Setup thread parameters */
 #ifdef LTHREAD_DEBUG
-    new_thread->stack_reg = VALGRIND_STACK_REGISTER(stack, stack + LTHREAD_STACK_SIZE);
+        new_thread->stack_reg = VALGRIND_STACK_REGISTER(stack, stack + LTHREAD_STACK_SIZE);
 #endif
-    /* setup structure */
-    new_thread->stack = stack;
-    new_thread->start_routine = start_routine;
-    new_thread->data = data;
-    new_thread->status = READY;
+        /* setup structure */
+        new_thread->stack = stack;
+        new_thread->start_routine = start_routine;
+        new_thread->data = data;
+        new_thread->status = READY;
 
-    /* Use current context as starting context */
-    if (getcontext(&new_thread->context)) {
-        perror("Failed to get context");
-        exit(EXIT_FAILURE);
+        /* Use current context as starting context */
+        if (getcontext(&new_thread->context)) {
+            perror("Failed to get context");
+            exit(EXIT_FAILURE);
+        }
+
+        /* Update current context with desired context for thread start */
+        new_thread->context.uc_stack.ss_sp = stack;
+        new_thread->context.uc_stack.ss_size = LTHREAD_STACK_SIZE;
+        new_thread->context.uc_link = &head->context;
+        makecontext(&new_thread->context, (void(*)(void))lthread_run, 1, new_thread->id);
+
+        /* Add thread to end of scheduling queue */
+        push_queue(new_thread);
+
+        /* OK Now I'm done */
+        UNBLOCK_SIGNAL();
     }
 
-    /* Update current context with desired context for thread start */
-    new_thread->context.uc_stack.ss_sp = stack;
-    new_thread->context.uc_stack.ss_size = LTHREAD_STACK_SIZE;
-    new_thread->context.uc_link = &head->context;
-    makecontext(&new_thread->context, (void(*)(void))lthread_run, 1, new_thread->id);
-
-    /* Add thread to end of scheduling queue */
-    push_queue(new_thread);
-
-    /* OK Now I'm done */
-    UNBLOCK_SIGNAL();
 
     return 0;
 }
