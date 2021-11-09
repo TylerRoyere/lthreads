@@ -9,6 +9,7 @@ test_io
 test_produce_consume
 test_many_threads
 test_blocking
+test_thrash
 
 # Prerequisites
 *.d

@@ -35,3 +35,7 @@ jobs:
       run: ./test_produce_consume
     - name: valgrind test_produce_consume
       run: valgrind --error-exitcode=1 --leak-check=full --track-origins=yes ./test_produce_consume
+    - name: run test_thrash
+      run: ./test_thrash
+    - name: valgrind test_thrash
+      run: valgrind --error-exitcode=1 --leak-check=full --track-origins=yes ./test_thrash
